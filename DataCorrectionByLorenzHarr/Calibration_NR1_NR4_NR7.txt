@@ -1,0 +1,105 @@
+# 1. load ZIMEN data for the according day (To keep it simple, I called it here "dataZIMEN")
+# Then rename the first column
+colnames(dataZIMEN)[1] <- "DATETIME_UTC"
+
+# add seconds to DateTime (in our case "00")
+dataZIMEN$DATETIME_UTC <- paste(dataZIMEN$DATETIME_UTC,"00",  sep=":")
+
+# join PM data with dataZIMEN. Important: use type "left"
+library(plyr)
+joinPM_data_ZIMEN <- join(x=PM_data, y=dataZIMEN, type="left", by="DATETIME_UTC")
+
+# fullfill the Relative Humidity Column (RH-Column). Now you are ready to use the Humidity Correction... 
+joinPM_data_ZIMEN  <- joinPM_data_ZIMEN %>% fill(PM.rF..APDA.Außenfeuchte....., .direction = "downup")
+
+
+#calculate 180sec rolling mean
+library(zoo)
+
+joinPM_data_ZIMEN$mean180Sec.NR1 <- NA
+mean180Sec.NR1 <- rollmean(joinPM_data_ZIMEN$PM25, k=180)
+joinPM_data_ZIMEN$mean20Sec.NR3[180:nrow(joinPM_data_ZIMEN)] <- mean180Sec.NR1
+
+
+# this is the function for Humidity Correction (Crilley et al. 2020)
+
+easy_humCorrectPM_tres <- function(data, PMColumn, RelHumColumn, K=0.33, HumTreshold=60)
+{
+  data[,ncol(data)+1] <- NA
+  colnames(data)[ncol(data)] <- "PM2.5_HumCor"
+  ja <- nrow(data)
+  for (i in 1:ja) {
+    
+    measuredHum <- data[i,RelHumColumn]
+    
+    if(measuredHum > HumTreshold )
+    {
+      data[i,ncol(data)] <- round((data[i,PMColumn]/ (1+((K/1.65)/(-1+(1/((measuredHum)/100)))))), digits = 1)
+    }
+    else{
+      data[i,ncol(data)] <- round(data[i,PMColumn], digits = 1)
+      
+    }
+  }
+  return (data)
+  }
+
+
+
+# 180sec rolling mean-calibration function for  NR1. If you like to use this calibration, you have to calculate 180sec rolling mean first.
+
+calibratePM2.5_NR1 <- function (data, PMColumn, RHColumn)
+{
+  data[, ncol(data)+1] <- NA
+  colnames(data)[ncol(data)] <- paste("cal_NR1", colnames(data)[PMColumn], sep=".") 
+  
+  for (i in 1:nrow(data))
+  {
+    if(data[i,RHColumn] <= 85)
+    {
+      data[i,ncol(data)] <- data[i,PMColumn] * 0.9485 + 0.06062
+    } else{
+      data[i,ncol(data)] <- data[i,PMColumn] * 0.9369755 + 0.1060661
+    }
+  }
+  return(data)
+}
+
+
+# 180secrolling mean-calibration function for  NR4. If you like to use this calibration, you have to calculate 180sec rolling mean first.
+
+calibratePM2.5_NR4 <- function (data, PMColumn, RHColumn)
+{
+  data[, ncol(data)+1] <- NA
+  colnames(data)[ncol(data)] <- paste("cal_NR4", colnames(data)[PMColumn], sep=".") 
+  
+  for (i in 1:nrow(data))
+  {
+    if(data[i,RHColumn] <= 85)
+    {
+      data[i,ncol(data)] <- data[i,PMColumn] * 1.116 - 0.01868
+    } else{
+      data[i,ncol(data)] <- data[i,PMColumn] * 1.102212 - 0.023634
+    }
+  }
+  return(data)
+}
+
+# 180sec rolling mean-calibration function for  NR7.If you like to use this calibration, you have to calculate 180sec rolling mean first.
+
+calibratePM2.5_NR7 <- function (data, PMColumn, RHColumn)
+{
+  data[, ncol(data)+1] <- NA
+  colnames(data)[ncol(data)] <- paste("cal_NR7", colnames(data)[PMColumn], sep=".") 
+  
+  for (i in 1:nrow(data))
+  {
+    if(data[i,RHColumn] <= 85)
+    {
+      data[i,ncol(data)] <- data[i,PMColumn] * 0.9474 - 2.512
+    } else{
+      data[i,ncol(data)] <- data[i,PMColumn] * 0.9419431 + 0.0228677
+    }
+  }
+  return(data)
+}
